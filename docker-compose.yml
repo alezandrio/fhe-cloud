@@ -1,0 +1,69 @@
+version: "3.8"
+
+services:
+
+  server:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./server:/app
+    command: >
+      sh -c "pip install -q flwr==1.7.0 && python server.py"
+    ports:
+      - "8080:8080"
+    networks:
+      - fl_network
+
+  hospital_1:
+    build: ./hospital_node
+    environment:
+      - SERVER_ADDRESS=server:8080
+    volumes:
+      - mnist_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    depends_on:
+      - server
+    networks:
+      - fl_network
+
+  hospital_2:
+    build: ./hospital_node
+    environment:
+      - SERVER_ADDRESS=server:8080
+    volumes:
+      - mnist_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    depends_on:
+      - server
+    networks:
+      - fl_network
+
+  hospital_3:
+    build: ./hospital_node
+    environment:
+      - SERVER_ADDRESS=server:8080
+    volumes:
+      - mnist_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    depends_on:
+      - server
+    networks:
+      - fl_network
+
+networks:
+  fl_network:
+
+volumes:
+  mnist_data:
