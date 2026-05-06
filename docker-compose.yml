@@ -9,12 +9,13 @@ services:
       - ./server:/app
     command: ["python", "server.py"]
     ports:
-      - "8080:8080"
+      - "9090:8080"
     networks:
       - fl_network
 
   hospital_1:
     build: ./hospital_node
+    working_dir: /app
     environment:
       - SERVER_ADDRESS=server:8080
       - CLIENT_ID=0
@@ -22,50 +23,60 @@ services:
       - PARTITION_MODE=dirichlet
       - DIRICHLET_ALPHA=0.5
     volumes:
+      - ./hospital_node:/app
       - mnist_data:/data
     deploy:
       resources:
         limits:
           cpus: "2.0"
-          memory: 4096M
+          memory: 2048M
     depends_on:
       - server
+    command: ["python", "client.py"]
     networks:
       - fl_network
 
   hospital_2:
     build: ./hospital_node
+    working_dir: /app
     environment:
       - SERVER_ADDRESS=server:8080
       - CLIENT_ID=1
       - NUM_CLIENTS=3
     volumes:
+      - ./hospital_node:/app
       - mnist_data:/data
     deploy:
       resources:
         limits:
           cpus: "1.0"
-          memory: 2048M
+          memory: 1024M
     depends_on:
       - server
+    command: ["python", "client.py"]
     networks:
       - fl_network
 
   hospital_3:
     build: ./hospital_node
+    working_dir: /app
     environment:
       - SERVER_ADDRESS=server:8080
       - CLIENT_ID=2
       - NUM_CLIENTS=3
+      - PARTITION_MODE=dirichlet
+      - DIRICHLET_ALPHA=0.5
     volumes:
+      - ./hospital_node:/app
       - mnist_data:/data
     deploy:
       resources:
         limits:
           cpus: "0.5"
-          memory: 1024M
+          memory: 512M
     depends_on:
       - server
+    command: ["python", "client.py"]
     networks:
       - fl_network
 

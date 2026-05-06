@@ -1,4 +1,26 @@
-flwr==1.7.0
-torch
-torchvision
+# --- Machine Learning e Visão Computacional ---
+# PyTorch: O motor principal para criar e treinar a nossa CNN leve
+torch>=2.0.0
+torchvision>=0.15.0
 
+# --- Dataset Médico ---
+# Acesso direto ao PneumoniaMNIST (e outros datasets médicos)
+medmnist>=3.0.1
+numpy>=1.24.0
+pandas>=2.0.0
+
+# --- Federated Learning ---
+# Flower: O framework que vai simular o ambiente de treino federado local
+flwr>=1.7.0
+
+# --- Segurança e Cifragem Homomórfica ---
+# TenSEAL: A biblioteca baseada no Microsoft SEAL para o algoritmo CKKS
+tenseal>=0.3.14
+
+# --- Integração com a Cloud (AWS) ---
+# Boto3: O SDK oficial da AWS para o Python (para os contentores enviarem os chunks para o S3)
+boto3>=1.34.0
+
+# --- Utilitários de Segurança ---
+# Para carregar as credenciais da AWS de forma segura sem as meter no código fonte
+python-dotenv>=1.0.0
