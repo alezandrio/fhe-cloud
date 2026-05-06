@@ -19,6 +19,8 @@ services:
       - SERVER_ADDRESS=server:8080
       - CLIENT_ID=0
       - NUM_CLIENTS=3
+      - PARTITION_MODE=dirichlet
+      - DIRICHLET_ALPHA=0.5
     volumes:
       - mnist_data:/data
     deploy:
