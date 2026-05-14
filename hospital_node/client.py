@@ -8,6 +8,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, Subset
 import medmnist
 from medmnist import INFO
+import tenseal as ts
 
 # Modelo Adaptado para Pneumonia (2 Classes)
 class SimpleCNN(nn.Module):
@@ -34,6 +35,23 @@ PARTITION_MODE = os.getenv("PARTITION_MODE", "iid").lower()
 DIRICHLET_ALPHA = float(os.getenv("DIRICHLET_ALPHA", "0.5"))
 SEED = 42
 
+# Funções Auxiliares de Fatiamento (Chunking)
+def get_model_shapes():
+    return [p.shape for p in model.parameters()]
+
+def flatten_weights(weights):
+    # Espalma todas as matrizes para um único vetor 1D gigante
+    return np.concatenate([w.flatten() for w in weights])
+
+def unflatten_weights(flat_weights, shapes):
+    # Reconstrói as camadas da rede neuronal a partir do vetor 1D
+    weights = []
+    idx = 0
+    for shape in shapes:
+        size = np.prod(shape)
+        weights.append(flat_weights[idx : idx + size].reshape(shape))
+        idx += size
+    return weights
 
 # Particionamento dos Dados (IID e Dirichlet)
 def iid_partition(num_samples, num_clients, seed):
@@ -107,15 +125,57 @@ model = SimpleCNN()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
 criterion = nn.CrossEntropyLoss()
 
+# Configuração e Chaves FHE
+print("[Hospital] A carregar Contexto Privado FHE (com Secret Key)...", flush=True)
+with open("/keys/secret_context.bytes", "rb") as f:
+    # O cliente tem o contexto completo, incluindo a Secret Key para cifrar e decifrar.
+    fhe_context = ts.context_from(f.read())
 
-# Cliente Flower para o Hospital (Implementação do FedAvg)
+# O tamanho máximo de um vetor CKKS é metade do poly_modulus_degree
+# Ver fhe_keys.py para a definição (8192 / 2 = 4096)
+CHUNK_SIZE = 4096
+
+# Cliente Flower (Agora com Cifragem Homomórfica) - Implementação do FedAvg
 class HospitalClient(fl.client.NumPyClient):
+    
     def get_parameters(self, config):
-        return [p.detach().cpu().numpy() for p in model.parameters()]
+        print(f"[Hospital {CLIENT_ID}] A cifrar parâmetros (FHE CKKS)...", flush=True)
+        # 1. Extrair pesos originais
+        weights = [p.detach().cpu().numpy() for p in model.parameters()]
+        flat_weights = flatten_weights(weights)
+
+        # 2. Fatiar e Cifrar (Chunking)
+        encrypted_chunks = []
+        for i in range(0, len(flat_weights), CHUNK_SIZE):
+            chunk = flat_weights[i : i + CHUNK_SIZE]
+            # O CKKS_VECTOR faz a magia matemática
+            enc_vector = ts.ckks_vector(fhe_context, chunk)
+            # Converter para uint8 para o Flower conseguir transportar os bytes na rede em segurança
+            enc_bytes = np.frombuffer(enc_vector.serialize(), dtype=np.uint8)
+            encrypted_chunks.append(enc_bytes)
+
+        print(f"[Hospital {CLIENT_ID}] Foram geradas {len(encrypted_chunks)} fatias cifradas.", flush=True)
+        return encrypted_chunks
 
     def set_parameters(self, parameters):
-        for p, new_p in zip(model.parameters(), parameters):
-            p.data = torch.tensor(new_p)
+        print(f"[Hospital {CLIENT_ID}] A decifrar parâmetros recebidos do servidor...", flush=True)
+        shapes = get_model_shapes()
+        flat_weights = []
+
+        for enc_chunk_np in parameters:
+            # 1. Recuperar as bytes puras do array numpy
+            enc_bytes = enc_chunk_np.tobytes()
+            # 2. Reconstruir o vetor CKKS e Decifrar (usando a Secret Key local)
+            enc_vector = ts.ckks_vector_from(fhe_context, enc_bytes)
+            decrypted_chunk = enc_vector.decrypt()
+            flat_weights.extend(decrypted_chunk)
+
+        # 3. Reconstruir a estrutura original da CNN
+        weights = unflatten_weights(np.array(flat_weights), shapes)
+
+        # 4. Injetar na rede neuronal
+        for p, new_p in zip(model.parameters(), weights):
+            p.data = torch.tensor(new_p, dtype=p.dtype)
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
@@ -140,7 +200,6 @@ class HospitalClient(fl.client.NumPyClient):
                 correct += (output.argmax(1) == labels).sum().item()
                 total += labels.size(0)
         return loss, total, {"accuracy": correct / total}
-
 
 fl.client.start_client(
     server_address=SERVER_ADDRESS,

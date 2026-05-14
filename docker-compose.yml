@@ -7,6 +7,7 @@ services:
     working_dir: /app
     volumes:
       - ./server:/app
+      - ./fhe_keys_data:/keys
     command: ["python", "server.py"]
     ports:
       - "9090:8080"
@@ -25,6 +26,7 @@ services:
     volumes:
       - ./hospital_node:/app
       - mnist_data:/data
+      - ./fhe_keys_data:/keys
     deploy:
       resources:
         limits:
@@ -46,6 +48,7 @@ services:
     volumes:
       - ./hospital_node:/app
       - mnist_data:/data
+      - ./fhe_keys_data:/keys
     deploy:
       resources:
         limits:
@@ -69,6 +72,7 @@ services:
     volumes:
       - ./hospital_node:/app
       - mnist_data:/data
+      - ./fhe_keys_data:/keys
     deploy:
       resources:
         limits:
