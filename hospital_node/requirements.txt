@@ -24,3 +24,6 @@ boto3>=1.34.0
 # --- Utilitários de Segurança ---
 # Para carregar as credenciais da AWS de forma segura sem as meter no código fonte
 python-dotenv>=1.0.0
+
+# --- Outras dependências ---
+boto3

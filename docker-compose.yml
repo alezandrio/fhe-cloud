@@ -27,6 +27,7 @@ services:
       - ./hospital_node:/app
       - mnist_data:/data
       - ./fhe_keys_data:/keys
+      - ~/.aws:/root/.aws:ro
     deploy:
       resources:
         limits:
@@ -49,6 +50,7 @@ services:
       - ./hospital_node:/app
       - mnist_data:/data
       - ./fhe_keys_data:/keys
+      - ~/.aws:/root/.aws:ro
     deploy:
       resources:
         limits:
@@ -73,6 +75,7 @@ services:
       - ./hospital_node:/app
       - mnist_data:/data
       - ./fhe_keys_data:/keys
+      - ~/.aws:/root/.aws:ro
     deploy:
       resources:
         limits:

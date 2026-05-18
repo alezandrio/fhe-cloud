@@ -3,3 +3,9 @@ __pycache__/
 *.bin
 .env
 fhe_keys_data/
+*.bytes
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl

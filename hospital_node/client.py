@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader, Subset
 import medmnist
 from medmnist import INFO
 import tenseal as ts
+import boto3
+import io
 
 # Modelo Adaptado para Pneumonia (2 Classes)
 class SimpleCNN(nn.Module):
@@ -34,6 +36,10 @@ SERVER_ADDRESS = os.getenv("SERVER_ADDRESS", "server:8080")
 PARTITION_MODE = os.getenv("PARTITION_MODE", "iid").lower()
 DIRICHLET_ALPHA = float(os.getenv("DIRICHLET_ALPHA", "0.5"))
 SEED = 42
+
+# ---- Configuração AWS ----
+s3_client = boto3.client('s3', region_name='eu-west-1')
+BUCKET_NAME = "fhe-cloud-chunks-90b21d10"
 
 # Funções Auxiliares de Fatiamento (Chunking)
 def get_model_shapes():
@@ -121,6 +127,8 @@ def get_loaders():
 
 trainloader, testloader = get_loaders()
 
+# Garantir que todos os hospitais inicializam a rede com os exatos mesmos pesos!
+torch.manual_seed(SEED)
 model = SimpleCNN()
 optimizer = optim.SGD(model.parameters(), lr=0.01)
 criterion = nn.CrossEntropyLoss()
@@ -137,27 +145,40 @@ CHUNK_SIZE = 4096
 
 # Cliente Flower (Agora com Cifragem Homomórfica) - Implementação do FedAvg
 class HospitalClient(fl.client.NumPyClient):
+    def __init__(self):
+        self.round_counter = 0
     
     def get_parameters(self, config):
-        print(f"[Hospital {CLIENT_ID}] A cifrar parâmetros (FHE CKKS)...", flush=True)
-        # 1. Extrair pesos originais
+        current_round = config.get("server_round", self.round_counter)
+        print(f"[Hospital {CLIENT_ID}] A cifrar e a enviar fatias para a AWS (Ronda {current_round})...", flush=True)
+        
         weights = [p.detach().cpu().numpy() for p in model.parameters()]
         flat_weights = flatten_weights(weights)
 
-        # 2. Fatiar e Cifrar (Chunking)
         encrypted_chunks = []
         for i in range(0, len(flat_weights), CHUNK_SIZE):
             chunk = flat_weights[i : i + CHUNK_SIZE]
-            # O CKKS_VECTOR faz a magia matemática
             enc_vector = ts.ckks_vector(fhe_context, chunk)
-            # Converter para uint8 para o Flower conseguir transportar os bytes na rede em segurança
             enc_bytes = np.frombuffer(enc_vector.serialize(), dtype=np.uint8)
+            
+            # INÍCIO DO UPLOAD PARA S3 
+            # Organizar por pastas na Cloud: ex: "Ronda_1/Hospital_1/chunk_0.bytes"
+            s3_path = f"Ronda_{current_round}/Hospital_{CLIENT_ID}/chunk_{i//CHUNK_SIZE}.bytes"
+            
+            # O boto3 precisa que os bytes estejam num "ficheiro virtual" para fazer upload
+            file_obj = io.BytesIO(enc_bytes)
+            s3_client.upload_fileobj(file_obj, BUCKET_NAME, s3_path)
+            # FIM DO UPLOAD PARA S3 
+
             encrypted_chunks.append(enc_bytes)
 
-        print(f"[Hospital {CLIENT_ID}] Foram geradas {len(encrypted_chunks)} fatias cifradas.", flush=True)
+        print(f"[Hospital {CLIENT_ID}] {len(encrypted_chunks)} fatias enviadas para o S3 com sucesso!", flush=True)
         return encrypted_chunks
 
     def set_parameters(self, parameters):
+        if not parameters:
+            return
+
         print(f"[Hospital {CLIENT_ID}] A decifrar parâmetros recebidos do servidor...", flush=True)
         shapes = get_model_shapes()
         flat_weights = []
@@ -178,6 +199,7 @@ class HospitalClient(fl.client.NumPyClient):
             p.data = torch.tensor(new_p, dtype=p.dtype)
 
     def fit(self, parameters, config):
+        self.round_counter = config.get("server_round", self.round_counter + 1)
         self.set_parameters(parameters)
         model.train()
         for images, labels in trainloader:
@@ -186,7 +208,7 @@ class HospitalClient(fl.client.NumPyClient):
             loss = criterion(model(images), labels)
             loss.backward()
             optimizer.step()
-        return self.get_parameters(config={}), len(trainloader.dataset), {}
+        return self.get_parameters(config=config), len(trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
@@ -196,10 +218,12 @@ class HospitalClient(fl.client.NumPyClient):
             for images, labels in testloader:
                 labels = labels.squeeze(1).long()
                 output = model(images)
-                loss += criterion(output, labels).item()
+                # Multiply by batch size to get the true sum of losses
+                loss += criterion(output, labels).item() * labels.size(0)
                 correct += (output.argmax(1) == labels).sum().item()
                 total += labels.size(0)
-        return loss, total, {"accuracy": correct / total}
+        average_loss = loss / total if total > 0 else 0.0
+        return average_loss, total, {"accuracy": correct / total if total > 0 else 0.0}
 
 fl.client.start_client(
     server_address=SERVER_ADDRESS,
