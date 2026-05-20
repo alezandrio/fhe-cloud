@@ -9,3 +9,10 @@ fhe_keys_data/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+
+# AWS Lambda Build Artifacts
+infra/layer_build/python/
+*.zip
+
+# Ficheiros de teste manuais
+ficheiro_falso.bytes

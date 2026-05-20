@@ -39,7 +39,7 @@ SEED = 42
 
 # ---- Configuração AWS ----
 s3_client = boto3.client('s3', region_name='eu-west-1')
-BUCKET_NAME = "fhe-cloud-chunks-90b21d10"
+BUCKET_NAME = os.getenv("BUCKET_NAME", "fhe-cloud-chunks-90b21d10")
 
 # Funções Auxiliares de Fatiamento (Chunking)
 def get_model_shapes():
@@ -163,7 +163,7 @@ class HospitalClient(fl.client.NumPyClient):
             
             # INÍCIO DO UPLOAD PARA S3 
             # Organizar por pastas na Cloud: ex: "Ronda_1/Hospital_1/chunk_0.bytes"
-            s3_path = f"Ronda_{current_round}/Hospital_{CLIENT_ID}/chunk_{i//CHUNK_SIZE}.bytes"
+            s3_path = f"incoming/Ronda_{current_round}/Hospital_{CLIENT_ID}/chunk_{i//CHUNK_SIZE}.bytes"
             
             # O boto3 precisa que os bytes estejam num "ficheiro virtual" para fazer upload
             file_obj = io.BytesIO(enc_bytes)
