@@ -22,6 +22,8 @@ resource "random_id" "bucket_suffix" {
 resource "aws_s3_bucket" "fhe_chunks_bucket" {
   bucket = "fhe-cloud-chunks-${random_id.bucket_suffix.hex}"
 
+  force_destroy = true
+
   # Etiquetas para sabermos a quem pertence isto se a Amazon nos perguntar
   tags = {
     Name        = "Armazem de Fatias FHE"
@@ -34,4 +36,19 @@ resource "aws_s3_bucket" "fhe_chunks_bucket" {
 output "nome_do_bucket" {
   value       = aws_s3_bucket.fhe_chunks_bucket.bucket
   description = "Este é o nome que o nosso cliente Python vai precisar para enviar os dados."
+}
+
+# 6. Fazer o upload do Contexto Público FHE para a Cloud
+resource "aws_s3_object" "public_context_file" {
+  # Aponta para o bucket que acabámos de criar
+  bucket = aws_s3_bucket.fhe_chunks_bucket.id
+  
+  # O caminho/nome do ficheiro como vai ficar guardado no S3
+  key    = "keys/public_context.bytes" 
+  
+  # O caminho do ficheiro na tua máquina local (ajusta se a tua pasta local tiver outro nome)
+  source = "../fhe_keys_data/public_context.bytes" 
+  
+  # Força o Terraform a atualizar o ficheiro no S3 sempre que o alterares localmente
+  etag   = filemd5("../fhe_keys_data/public_context.bytes") 
 }

@@ -77,3 +77,28 @@ resource "aws_lambda_layer_version" "tenseal_layer" {
   compatible_runtimes = ["python3.12"]
   description         = "Layer com TenSEAL e NumPy compilados para Amazon Linux"
 }
+
+# 7. Política Customizada de S3 para a Lambda (Resolve o Erro 403 e permite apagar Locks)
+resource "aws_iam_role_policy" "lambda_s3_custom_policy" {
+  name = "lambda_s3_custom_policy"
+  role = aws_iam_role.lambda_exec_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",   # Permite que o S3 devolva 404 em vez de 403
+          "s3:GetObject",    # Permite ler as chaves e os chunks cifrados
+          "s3:PutObject",    # Permite criar os ficheiros .lock e os ficheiros agregados
+          "s3:DeleteObject"  # Permite apagar o ficheiro .lock no final do processo
+        ]
+        Resource = [
+          aws_s3_bucket.fhe_chunks_bucket.arn,         # Permissão aplicada ao Bucket em si (necessário para o ListBucket)
+          "${aws_s3_bucket.fhe_chunks_bucket.arn}/*"   # Permissão aplicada aos Ficheiros dentro do Bucket
+        ]
+      }
+    ]
+  })
+}
