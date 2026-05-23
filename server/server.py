@@ -22,32 +22,18 @@ class FHEFedAvg(fl.server.strategy.FedAvg):
         if not results:
             return None, {}
 
-        print(f"[Ronda {server_round}] A iniciar Agregação Homomórfica (MapReduce Style)...")
-        all_client_chunks = [fl.common.parameters_to_ndarrays(res.parameters) for _, res in results]
+        # O servidor agora apenas atua como Orquestrador de Fluxo
+        print(f"\n[Ronda {server_round}] 📡 Recebida confirmação de {len(results)} hospitais!")
+        print(f"[Servidor] Sucesso! Os clientes terminaram o upload dos chunks cifrados para o S3.")
+        print(f"[Servidor] A matemática pesada de agregação FHE foi totalmente delegada para a AWS.")
         
-        num_clients = len(all_client_chunks)
-        num_chunks = len(all_client_chunks[0])
-        print(f"[Servidor] Recebidas {num_chunks} fatias de {num_clients} hospitais.")
-
-        aggregated_chunks = []
-
-        for chunk_idx in range(num_chunks):
-            print(f"   ↳ A somar fatia {chunk_idx + 1}/{num_chunks}...", end="\r")
-            
-            first_client_bytes = all_client_chunks[0][chunk_idx].tobytes()
-            sum_vector = ts.ckks_vector_from(public_context, first_client_bytes)
-
-            for client_idx in range(1, num_clients):
-                client_chunk_bytes = all_client_chunks[client_idx][chunk_idx].tobytes()
-                next_vector = ts.ckks_vector_from(public_context, client_chunk_bytes)
-                sum_vector += next_vector 
-            
-            avg_vector = sum_vector * (1 / num_clients)
-            serialized_chunk = np.frombuffer(avg_vector.serialize(), dtype=np.uint8)
-            aggregated_chunks.append(serialized_chunk)
-
-        print(f"\n[Servidor] Agregação concluída para a Ronda {server_round}.")
-        return fl.common.ndarrays_to_parameters(aggregated_chunks), {}
+        # Como a agregação real vai acontecer de forma assíncrona/serverless no S3 via Lambdas,
+        # o servidor Flower não precisa de processar tensores homomórficos locais nesta fase.
+        # Devolvemos um parâmetro leve e fictício ("dummy") apenas para cumprir a assinatura do Flower
+        # e permitir que o ciclo de treino avance para a próxima ronda.
+        dummy_signal = [np.array([0.0], dtype=np.float32)]
+        
+        return fl.common.ndarrays_to_parameters(dummy_signal), {}
 
     def aggregate_evaluate(
         self,
@@ -56,10 +42,10 @@ class FHEFedAvg(fl.server.strategy.FedAvg):
         failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes], BaseException]],
     ) -> Tuple[Optional[float], Dict[str, fl.common.Scalar]]:
         
-        # 1. Chamar a função original do FedAvg para ele fazer as matemáticas (médias ponderadas)
+        # Mantemos esta função intacta! Os hospitais continuam a avaliar o modelo localmente
+        # e a enviar métricas limpas (não cifradas, ex: loss e acerto) de volta ao servidor via gRPC.
         aggregated_loss, aggregated_metrics = super().aggregate_evaluate(server_round, results, failures)
         
-        # 2. Imprimir o resultado no nosso terminal
         if aggregated_metrics and "global_accuracy" in aggregated_metrics:
             accuracy = aggregated_metrics["global_accuracy"] * 100
             print(f"[Ronda {server_round} - AVALIAÇÃO] Precisão Global: {accuracy:.2f}%")

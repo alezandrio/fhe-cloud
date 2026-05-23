@@ -1,18 +1,47 @@
+# ========================================
+# 1. Ambientes Virtuais e Python
+# ========================================
 venv/
+env/
 __pycache__/
-*.bin
+*.py[cod]
+*$py.class
+
+# ========================================
+# 2. Segredos e Chaves (CRÍTICO)
+# ========================================
 .env
 fhe_keys_data/
 *.bytes
-# Terraform
+
+# ========================================
+# 3. Infraestrutura (Terraform)
+# ========================================
 .terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
+# NOTA: .terraform.lock.hcl NÃO está aqui de propósito. Ele DEVE ir para o GitHub.
 
-# AWS Lambda Build Artifacts
+# ========================================
+# 4. AWS Lambda e Build Artifacts
+# ========================================
 infra/layer_build/python/
 *.zip
-
-# Ficheiros de teste manuais
+*.bin
 ficheiro_falso.bytes
+
+# ========================================
+# 5. Dados Locais e Machine Learning
+# ========================================
+# Ignorar pastas de dados caso o PyTorch descarregue o MNIST localmente fora do Docker
+data/
+datasets/
+.flower/
+
+# ========================================
+# 6. Editores de Texto e SO
+# ========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

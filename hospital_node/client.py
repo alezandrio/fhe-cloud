@@ -11,6 +11,8 @@ from medmnist import INFO
 import tenseal as ts
 import boto3
 import io
+import time
+import botocore
 
 # Modelo Adaptado para Pneumonia (2 Classes)
 class SimpleCNN(nn.Module):
@@ -39,7 +41,9 @@ SEED = 42
 
 # ---- Configuração AWS ----
 s3_client = boto3.client('s3', region_name='eu-west-1')
-BUCKET_NAME = os.getenv("BUCKET_NAME", "fhe-cloud-chunks-90b21d10")
+BUCKET_NAME = os.getenv("BUCKET_NAME")
+if not BUCKET_NAME:
+    raise ValueError("A variável BUCKET_NAME não foi definida. Verifique o output do Terraform e injete-a no contentor.")
 
 # Funções Auxiliares de Fatiamento (Chunking)
 def get_model_shapes():
@@ -155,52 +159,74 @@ class HospitalClient(fl.client.NumPyClient):
         weights = [p.detach().cpu().numpy() for p in model.parameters()]
         flat_weights = flatten_weights(weights)
 
-        encrypted_chunks = []
+        chunks_uploaded = 0
         for i in range(0, len(flat_weights), CHUNK_SIZE):
             chunk = flat_weights[i : i + CHUNK_SIZE]
             enc_vector = ts.ckks_vector(fhe_context, chunk)
-            enc_bytes = np.frombuffer(enc_vector.serialize(), dtype=np.uint8)
+            # Passamos as bytes geradas diretamente (sem numpy intermediário)
+            enc_bytes = enc_vector.serialize()
             
-            # INÍCIO DO UPLOAD PARA S3 
-            # Organizar por pastas na Cloud: ex: "Ronda_1/Hospital_1/chunk_0.bytes"
             s3_path = f"incoming/Ronda_{current_round}/Hospital_{CLIENT_ID}/chunk_{i//CHUNK_SIZE}.bytes"
             
-            # O boto3 precisa que os bytes estejam num "ficheiro virtual" para fazer upload
             file_obj = io.BytesIO(enc_bytes)
             s3_client.upload_fileobj(file_obj, BUCKET_NAME, s3_path)
-            # FIM DO UPLOAD PARA S3 
+            chunks_uploaded += 1
 
-            encrypted_chunks.append(enc_bytes)
-
-        print(f"[Hospital {CLIENT_ID}] {len(encrypted_chunks)} fatias enviadas para o S3 com sucesso!", flush=True)
-        return encrypted_chunks
+        print(f"[Hospital {CLIENT_ID}] {chunks_uploaded} fatias enviadas para o S3 com sucesso!", flush=True)
+        
+        # CORREÇÃO P1: Em vez de enviar as fatias pesadas de volta pelo Flower,
+        # enviamos apenas um "sinal" (flag) a indicar que o upload terminou.
+        dummy_signal = [np.array([1], dtype=np.float32)]
+        return dummy_signal
 
     def set_parameters(self, parameters):
-        if not parameters:
-            return
+        # Como delegamos tudo para a AWS S3, vamos IGNORAR o dummy signal do Flower gRPC
+        pass
 
-        print(f"[Hospital {CLIENT_ID}] A decifrar parâmetros recebidos do servidor...", flush=True)
+    def download_and_decrypt_global_model(self, round_to_download):
+        # Se for a ronda 0 (antes da 1ª ronda de treino), não há modelo global para transferir.
+        if round_to_download == 0:
+            return
+            
+        print(f"[Hospital {CLIENT_ID}] A transferir e decifrar modelo agregado da AWS (Ronda {round_to_download})...", flush=True)
         shapes = get_model_shapes()
         flat_weights = []
+        
+        dummy_weights = [p.detach().cpu().numpy() for p in model.parameters()]
+        total_elements = len(flatten_weights(dummy_weights))
+        num_chunks = (total_elements + CHUNK_SIZE - 1) // CHUNK_SIZE
 
-        for enc_chunk_np in parameters:
-            # 1. Recuperar as bytes puras do array numpy
-            enc_bytes = enc_chunk_np.tobytes()
-            # 2. Reconstruir o vetor CKKS e Decifrar (usando a Secret Key local)
+        for i in range(num_chunks):
+            s3_path = f"outgoing/Ronda_{round_to_download}/chunk_{i}_aggregated.bytes"
+            
+            # Barreira de Polling: O Cliente espera bloqueado até a AWS Lambda acabar de processar!
+            while True:
+                try:
+                    obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_path)
+                    enc_bytes = obj['Body'].read()
+                    break
+                except botocore.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] in ['NoSuchKey', '404']:
+                        print(f"[Hospital {CLIENT_ID}] ⏳ AWS Lambda a processar. A aguardar {s3_path}...", flush=True)
+                        time.sleep(5)
+                    else:
+                        raise e
+            
+            # Reconstruir e Decifrar
             enc_vector = ts.ckks_vector_from(fhe_context, enc_bytes)
             decrypted_chunk = enc_vector.decrypt()
             flat_weights.extend(decrypted_chunk)
-
-        # 3. Reconstruir a estrutura original da CNN
+            
+        # Reconstruir a estrutura original da CNN
         weights = unflatten_weights(np.array(flat_weights), shapes)
 
-        # 4. Injetar na rede neuronal
         for p, new_p in zip(model.parameters(), weights):
             p.data = torch.tensor(new_p, dtype=p.dtype)
 
     def fit(self, parameters, config):
         self.round_counter = config.get("server_round", self.round_counter + 1)
-        self.set_parameters(parameters)
+        # Transferimos do S3 o modelo final da ronda anterior ANTES de iniciar um novo treino local
+        self.download_and_decrypt_global_model(self.round_counter - 1)
         model.train()
         for images, labels in trainloader:
             labels = labels.squeeze(1).long()
@@ -211,14 +237,16 @@ class HospitalClient(fl.client.NumPyClient):
         return self.get_parameters(config=config), len(trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
-        self.set_parameters(parameters)
+        current_round = config.get("server_round", self.round_counter)
+        # Na fase de avaliação, queremos testar o modelo agregado DESTA ronda que acabou de ser processado
+        self.download_and_decrypt_global_model(current_round)
         model.eval()
         loss, correct, total = 0.0, 0, 0
         with torch.no_grad():
             for images, labels in testloader:
                 labels = labels.squeeze(1).long()
                 output = model(images)
-                # Multiply by batch size to get the true sum of losses
+                # Multiplicamos a loss pelo número de exemplos para depois calcular a média ponderada globalmente no servidor
                 loss += criterion(output, labels).item() * labels.size(0)
                 correct += (output.argmax(1) == labels).sum().item()
                 total += labels.size(0)
