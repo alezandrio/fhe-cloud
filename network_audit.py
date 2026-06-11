@@ -3,13 +3,13 @@ import csv
 from datetime import datetime
 
 # Configurações FinOps
-BUCKET_NAME = 'fhe-cloud-chunks-9b9858ee' # Ex: fhe-cloud-chunks-abcd123
+BUCKET_NAME = 'fhe-cloud-chunks-9b9858ee'
 REGION = 'eu-west-1'
 NUM_HOSPITAIS = 3
 CSV_FILENAME = 'network_audit_results.csv'
 
 def calcular_auditoria_rede():
-    print(f"📊 A iniciar Auditoria de Tráfego de Rede no bucket: {BUCKET_NAME}...")
+    print(f"A iniciar Auditoria de Tráfego de Rede no bucket: {BUCKET_NAME}...")
     s3_client = boto3.client('s3', region_name=REGION)
     paginator = s3_client.get_paginator('list_objects_v2')
 
@@ -44,13 +44,12 @@ def calcular_auditoria_rede():
 
         # 1. Imprimir no Terminal
         print("\n=== RESULTADOS DA AUDITORIA FHE-CLOUD ===")
-        print(f"📈 Ficheiros Uploaded (Incoming): {ficheiros_incoming}")
-        print(f"📉 Ficheiros Agregados (Outgoing): {ficheiros_outgoing}")
+        print(f"Ficheiros Uploaded (Incoming): {ficheiros_incoming}")
+        print(f"Ficheiros Agregados (Outgoing): {ficheiros_outgoing}")
         print("-" * 40)
-        print(f"📥 Tráfego EDGE -> CLOUD (Data Ingress): {mb_incoming:.2f} MB ({mb_incoming/1024:.4f} GB)")
-        print(f"📤 Tráfego CLOUD -> EDGE (Data Egress) : {mb_egress_total:.2f} MB ({mb_egress_total/1024:.4f} GB)")
-        print(f"💽 Armazenamento Estático no S3        : {mb_armazenamento_total:.2f} MB")
-        print("=========================================\n")
+        print(f"Tráfego EDGE -> CLOUD (Data Ingress): {mb_incoming:.2f} MB ({mb_incoming/1024:.4f} GB)")
+        print(f"Tráfego CLOUD -> EDGE (Data Egress) : {mb_egress_total:.2f} MB ({mb_egress_total/1024:.4f} GB)")
+        print(f"Armazenamento Estático no S3        : {mb_armazenamento_total:.2f} MB")
 
         # 2. Guardar em CSV (Rigor Científico)
         timestamp_agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -72,7 +71,7 @@ def calcular_auditoria_rede():
                 round(mb_armazenamento_total, 2)
             ])
             
-        print(f"💾 Sucesso! Dados da auditoria guardados no ficheiro: '{CSV_FILENAME}'")
+        print(f"Sucesso! Dados da auditoria guardados no ficheiro: '{CSV_FILENAME}'")
 
     except Exception as e:
         print(f"❌ Erro ao aceder ao S3: {str(e)}")

@@ -10,7 +10,7 @@ HOURS_AGO = 4 # Extrair métricas das últimas 4 horas
 CSV_FILENAME = 'lambda_metrics_fhe.csv'
 
 def export_cloudwatch_metrics():
-    print("☁️ A ligar à AWS CloudWatch Logs...")
+    print("A ligar à AWS CloudWatch Logs...")
     client = boto3.client('logs', region_name=REGION_NAME)
 
     # Definir a janela temporal
@@ -31,7 +31,7 @@ def export_cloudwatch_metrics():
         queryString=query
     )
     query_id = start_query_response['queryId']
-    print(f"⏳ Query {query_id} iniciada. A aguardar processamento...")
+    print(f"Query {query_id} iniciada. A aguardar processamento...")
 
     # Polling ativo até a AWS terminar a extração
     response = None
@@ -43,7 +43,7 @@ def export_cloudwatch_metrics():
         raise Exception(f"❌ Erro na extração: {response['status']}")
 
     results = response['results']
-    print(f"✅ Extração concluída. {len(results)} execuções encontradas.")
+    print(f"Extração concluída. {len(results)} execuções encontradas.")
 
     # Exportar para CSV
     with open(CSV_FILENAME, mode='w', newline='') as file:
@@ -67,7 +67,7 @@ def export_cloudwatch_metrics():
                 mem_mb
             ])
 
-    print(f"💾 Ficheiro '{CSV_FILENAME}' gravado com sucesso. Pronto para análise estatística!")
+    print(f"Ficheiro '{CSV_FILENAME}' gravado com sucesso. Pronto para análise estatística!")
 
 if __name__ == "__main__":
     export_cloudwatch_metrics()
