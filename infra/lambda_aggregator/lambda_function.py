@@ -28,9 +28,7 @@ def lambda_handler(event, context):
         lock_key = f"locks/{ronda}/{chunk_name}.lock"
         aggregated_key = f"outgoing/{ronda}/{chunk_name}_aggregated.bytes"
         
-        # ------------------------------------------------------------------
-        # NOVO: PROTEÇÃO CONTRA RACE CONDITIONS (Verificação Dupla S3)
-        # ------------------------------------------------------------------
+        # PROTEÇÃO CONTRA RACE CONDITIONS (Verificação Dupla S3)
         try:
             # 1. Verifica se o resultado final já foi processado
             s3_client.head_object(Bucket=bucket, Key=aggregated_key)
@@ -49,9 +47,7 @@ def lambda_handler(event, context):
             if e.response['Error']['Code'] != '404':
                 raise e
 
-        # ------------------------------------------------------------------
         # 1. BARREIRA DE SINCRONIZAÇÃO
-        # ------------------------------------------------------------------
         prefix = f"incoming/{ronda}/"
         response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
         

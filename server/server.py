@@ -23,7 +23,7 @@ class FHEFedAvg(fl.server.strategy.FedAvg):
             return None, {}
 
         # O servidor agora apenas atua como Orquestrador de Fluxo
-        print(f"\n[Ronda {server_round}] 📡 Recebida confirmação de {len(results)} hospitais!")
+        print(f"\n[Ronda {server_round}] Recebida confirmação de {len(results)} hospitais!")
         print(f"[Servidor] Sucesso! Os clientes terminaram o upload dos chunks cifrados para o S3.")
         print(f"[Servidor] A matemática pesada de agregação FHE foi totalmente delegada para a AWS.")
         

@@ -13,6 +13,7 @@ import boto3
 import io
 import time
 import botocore
+from client_metrics_logger import log_client_metrics
 
 # Modelo Adaptado para Pneumonia (2 Classes)
 class SimpleCNN(nn.Module):
@@ -151,6 +152,9 @@ CHUNK_SIZE = 4096
 class HospitalClient(fl.client.NumPyClient):
     def __init__(self):
         self.round_counter = 0
+        self.round_start_time = {}
+        self.enc_time_ms = {}
+        self.dec_time_ms = {}
     
     def get_parameters(self, config):
         current_round = config.get("server_round", self.round_counter)
@@ -159,7 +163,9 @@ class HospitalClient(fl.client.NumPyClient):
         weights = [p.detach().cpu().numpy() for p in model.parameters()]
         flat_weights = flatten_weights(weights)
 
+        inicio_enc = time.time()
         chunks_uploaded = 0
+
         for i in range(0, len(flat_weights), CHUNK_SIZE):
             chunk = flat_weights[i : i + CHUNK_SIZE]
             enc_vector = ts.ckks_vector(fhe_context, chunk)
@@ -171,6 +177,8 @@ class HospitalClient(fl.client.NumPyClient):
             file_obj = io.BytesIO(enc_bytes)
             s3_client.upload_fileobj(file_obj, BUCKET_NAME, s3_path)
             chunks_uploaded += 1
+
+        self.enc_time_ms[current_round] = (time.time() - inicio_enc) * 1000
 
         print(f"[Hospital {CLIENT_ID}] {chunks_uploaded} fatias enviadas para o S3 com sucesso!", flush=True)
         
@@ -196,6 +204,8 @@ class HospitalClient(fl.client.NumPyClient):
         total_elements = len(flatten_weights(dummy_weights))
         num_chunks = (total_elements + CHUNK_SIZE - 1) // CHUNK_SIZE
 
+        tempo_dec_acumulado = 0.0
+
         for i in range(num_chunks):
             s3_path = f"outgoing/Ronda_{round_to_download}/chunk_{i}_aggregated.bytes"
             
@@ -212,10 +222,17 @@ class HospitalClient(fl.client.NumPyClient):
                     else:
                         raise e
             
+            inicio_dec = time.time()
+            
             # Reconstruir e Decifrar
             enc_vector = ts.ckks_vector_from(fhe_context, enc_bytes)
             decrypted_chunk = enc_vector.decrypt()
+
+            tempo_dec_acumulado += (time.time() - inicio_dec)
+
             flat_weights.extend(decrypted_chunk)
+
+        self.dec_time_ms[round_to_download] = tempo_dec_acumulado * 1000
             
         # Reconstruir a estrutura original da CNN
         weights = unflatten_weights(np.array(flat_weights), shapes)
@@ -225,6 +242,10 @@ class HospitalClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.round_counter = config.get("server_round", self.round_counter + 1)
+
+        current_round = self.round_counter
+        self.round_start_time[current_round] = time.time()
+        
         # Transferimos do S3 o modelo final da ronda anterior ANTES de iniciar um novo treino local
         self.download_and_decrypt_global_model(self.round_counter - 1)
         model.train()
@@ -251,7 +272,25 @@ class HospitalClient(fl.client.NumPyClient):
                 correct += (output.argmax(1) == labels).sum().item()
                 total += labels.size(0)
         average_loss = loss / total if total > 0 else 0.0
-        return average_loss, total, {"accuracy": correct / total if total > 0 else 0.0}
+        accuracy = correct / total if total > 0 else 0.0
+
+        if current_round in self.round_start_time:
+            tempo_total_ronda_ms = (time.time() - self.round_start_time[current_round]) * 1000
+            
+            # Recuperar os tempos registados nos passos anteriores
+            tempo_enc = self.enc_time_ms.get(current_round, 0.0)
+            tempo_dec = self.dec_time_ms.get(current_round, 0.0)
+            
+            log_client_metrics(
+                ronda=current_round,
+                hospital_id=f"Hospital_{CLIENT_ID}",
+                accuracy=accuracy,
+                loss=average_loss,
+                enc_time_ms=tempo_enc,
+                dec_time_ms=tempo_dec,
+                end_to_end_time_ms=tempo_total_ronda_ms
+            )
+        return average_loss, total, {"accuracy": accuracy}
 
 fl.client.start_client(
     server_address=SERVER_ADDRESS,

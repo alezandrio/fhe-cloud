@@ -26,6 +26,7 @@ services:
       - BUCKET_NAME=${BUCKET_NAME}
     volumes:
       - ./hospital_node:/app
+      - ./metricas_locais:/app/metricas_locais
       - mnist_data:/data
       - ./fhe_keys_data:/keys
       - ~/.aws:/root/.aws:ro
@@ -52,6 +53,7 @@ services:
       - BUCKET_NAME=${BUCKET_NAME}
     volumes:
       - ./hospital_node:/app
+      - ./metricas_locais:/app/metricas_locais
       - mnist_data:/data
       - ./fhe_keys_data:/keys
       - ~/.aws:/root/.aws:ro
@@ -78,6 +80,7 @@ services:
       - BUCKET_NAME=${BUCKET_NAME}
     volumes:
       - ./hospital_node:/app
+      - ./metricas_locais:/app/metricas_locais
       - mnist_data:/data
       - ./fhe_keys_data:/keys
       - ~/.aws:/root/.aws:ro
