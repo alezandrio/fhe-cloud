@@ -3,16 +3,17 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import os
 
-# 1. Configurações Globais de Estilo
+# 1. Configurações Globais de Estilo (Padrão de Publicação Q1 - IEEE/Elsevier)
 plt.rcParams.update({
     'font.size': 12,
-    'font.family': 'sans-serif',
-    'axes.labelsize': 14,
+    'font.family': 'serif',       # Fonte serifada ideal para artigos em LaTeX
+    'axes.labelsize': 13,
     'axes.titlesize': 14,
-    'legend.fontsize': 12,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    'figure.autolayout': True
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'figure.autolayout': True,
+    'figure.dpi': 300             # Alta resolução garantida para submissão
 })
 
 CSV_FILE = 'client_ml_metrics.csv'
@@ -24,7 +25,7 @@ def generate_convergence_plot():
         print(f"Ficheiro {CSV_FILE} não encontrado!")
         return
 
-    # 2. Carregar e Tratar Dados
+    # 2. Carregar e Tratar Dados do FHE (Do CSV)
     df = pd.read_csv(CSV_FILE)
     df['Hospital_ID'] = df['Hospital_ID'].str.replace('Hospital', 'Client')
     
@@ -33,85 +34,78 @@ def generate_convergence_plot():
         'Global_Loss': 'mean'
     }).reset_index()
 
-    # 3. Criar a Figura com Eixo Y Duplo
-    fig, ax1 = plt.subplots(figsize=(8, 5))
     x_rounds = round_stats['Ronda']
 
-    # --- Plot 1: Global Accuracy (Azul, Valores Acima, Percentagem) ---
-    color1 = '#1f77b4'
-    line1, = ax1.plot(x_rounds, round_stats['Global_Accuracy'], color=color1, marker='o', 
-                      linestyle='-', linewidth=2, markersize=8, label='Global Accuracy')
+    # 3. Dados do Baseline (Convertidos corretamente para a escala do gráfico)
+    # Nota: A accuracy no outro script estava em %, aqui dividimos por 100 para alinhar com o eixo [0, 1]
+    acc_baseline = [62.18 / 100, 75.64 / 100, 78.04 / 100, 85.42 / 100, 84.94 / 100]
+    loss_baseline = [3.2133, 2.9542, 2.7822, 2.1892, 1.9941]
+
+    # 4. Criar a Figura com Eixo Y Duplo
+    fig, ax1 = plt.subplots(figsize=(8, 5.5))
+
+    # --- EIXO 1 (Esquerdo): ACCURACY (Tons de Azul) ---
+    color_acc = '#1f77b4'
     
-    ax1.set_xlabel('Federated Learning Round', fontweight='bold')
-    ax1.set_ylabel('Accuracy', color=color1, fontweight='bold')
-    ax1.tick_params(axis='y', labelcolor=color1)
-    ax1.set_ylim([0.0, 1.05]) # Limite 0 a 100%
+    # Linha FHE-Cloud (Sua abordagem)
+    line1_fhe, = ax1.plot(x_rounds, round_stats['Global_Accuracy'], color=color_acc, marker='o', 
+                          linestyle='-', linewidth=2.2, markersize=7, label='FHE-Cloud (CKKS) - Accuracy')
+    
+    # Linha Baseline
+    line1_base, = ax1.plot(x_rounds, acc_baseline, color=color_acc, marker='v', 
+                           linestyle='--', linewidth=1.8, markersize=7, label='Baseline (Plaintext) - Accuracy')
+    
+    ax1.set_xlabel('Communication Round', fontweight='bold')
+    ax1.set_ylabel('Accuracy', color=color_acc, fontweight='bold')
+    ax1.tick_params(axis='y', labelcolor=color_acc)
+    ax1.set_ylim([0.55, 1.0]) # Ajustado o limite inferior para dar zoom na zona de convergência
     ax1.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
-    ax1.grid(True, linestyle='--', alpha=0.6)
+    ax1.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1.0)) # Transforma 0.85 em 85% no eixo de forma elegante
+    ax1.grid(True, linestyle=':', alpha=0.6)
 
-    # Inserir o texto da percentagem em cada ponto
-    for i, acc in enumerate(round_stats['Global_Accuracy']):
-        ronda = x_rounds.iloc[i]
-        y_offset = 7 if ronda == 2 else 12
-        
-        ax1.annotate(f"{acc*100:.2f}%", 
-                     (ronda, acc), 
-                     textcoords="offset points", 
-                     xytext=(0, y_offset), 
-                     ha='center', 
-                     fontsize=10, 
-                     color=color1,
-                     fontweight='bold')
-
-    # --- Plot 2: Global Loss (Vermelho, Valores Abaixo, Decimal) ---
+    # --- EIXO 2 (Direito): LOSS (Tons de Vermelho) ---
     ax2 = ax1.twinx()  
-    color2 = '#d62728'
-    line2, = ax2.plot(x_rounds, round_stats['Global_Loss'], color=color2, marker='s', 
-                      linestyle='--', linewidth=2, markersize=8, label='Global Loss')
+    color_loss = '#d62728'
     
-    ax2.set_ylabel('Loss', color=color2, fontweight='bold')
-    ax2.tick_params(axis='y', labelcolor=color2)
+    # Linha FHE-Cloud (Sua abordagem)
+    line2_fhe, = ax2.plot(x_rounds, round_stats['Global_Loss'], color=color_loss, marker='s', 
+                          linestyle='-', linewidth=2.2, markersize=7, label='FHE-Cloud (CKKS) - Loss')
     
-    # Limite aumentado (x 1.3) para dar espaço para o texto respirar
-    max_loss = round_stats['Global_Loss'].max()
-    ax2.set_ylim([0.0, max_loss * 1.3])
+    # Linha Baseline
+    line2_base, = ax2.plot(x_rounds, loss_baseline, color=color_loss, marker='^', 
+                           linestyle='--', linewidth=1.8, markersize=7, label='Baseline (Plaintext) - Loss')
+    
+    ax2.set_ylabel('Loss (Cross-Entropy)', color=color_loss, fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor=color_loss)
+    
+    # Escala dinâmica adaptada ao valor máximo absoluto das duas fontes de Loss
+    max_loss_val = max(round_stats['Global_Loss'].max(), max(loss_baseline))
+    ax2.set_ylim([0.0, max_loss_val * 1.1])
+    ax2.grid(False) # Evita que as grelhas dos dois eixos colidam e criem linhas confusas
 
-    # Inserir o texto decimal da Loss em cada ponto
-    for i, loss in enumerate(round_stats['Global_Loss']):
-        ronda = x_rounds.iloc[i]
-        
-        if ronda in [1, 2]:
-            y_offset = 12  # Para cima do ponto
-        else:
-            y_offset = -18
-
-        ax2.annotate(f"{loss:.4f}", 
-                     (ronda, loss), 
-                     textcoords="offset points", 
-                     xytext=(0, y_offset), 
-                     ha='center', 
-                     fontsize=10, 
-                     color=color2,
-                     fontweight='bold')
-
-    # 4. Legenda e Título Organizados
-    # Mover a legenda para fora do gráfico (no topo)
-    lines = [line1, line2]
+    # 5. Legenda e Título com Padrão Editorial
+    # Agrupar todas as linhas para criar uma legenda única centralizada no topo
+    lines = [line1_fhe, line1_base, line2_fhe, line2_base]
     labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc='upper center', bbox_to_anchor=(0.5, 1.15), 
-               ncol=2, frameon=False)
+    
+    # Organizado em 2 colunas para não estourar as margens
+    ax1.legend(lines, labels, loc='upper center', bbox_to_anchor=(0.5, 1.18), 
+               ncol=2, frameon=True, facecolor='white', edgecolor='none')
 
-    # Subir o título para não colidir com a legenda
-    plt.title('Convergence of Model Training over Homomorphic Encryption', y=1.2)
+    # Título em inglês (obrigatório para Q1) e com margem segura ajustada pelo 'y'
+    plt.title('Global Model Convergence: FHE-Cloud vs. Plaintext Baseline', y=1.20, fontweight='bold')
 
-    # 5. Exportar em Alta Resolução
-    pdf_filename = 'plot_convergence.pdf'
-    png_filename = 'plot_convergence.png'
+    # 6. Exportar em Alta Resolução Vetorial (PDF) e Rasterizada (PNG)
+    pdf_filename = 'plot_convergence_scientific.pdf'
+    png_filename = 'plot_convergence_scientific.png'
+    tiff_filename = 'plot_convergence_scientific.tiff'
     
     plt.savefig(pdf_filename, format='pdf', bbox_inches='tight')
     plt.savefig(png_filename, format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(tiff_filename, format='tiff', dpi=300, bbox_inches='tight')
     
     print(f"Gráficos gerados com sucesso: '{pdf_filename}' e '{png_filename}'")
+    plt.show()
 
 if __name__ == "__main__":
     generate_convergence_plot()
